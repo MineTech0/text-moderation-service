@@ -1,0 +1,91 @@
+# Alert Rules for Text Moderation Service
+groups:
+  - name: moderation_service_alerts
+    rules:
+      # Service down
+      - alert: ModerationServiceDown
+        expr: up{job="moderation-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Moderation service is down"
+          description: "The moderation service has been down for more than 1 minute."
+
+      # High queue size
+      - alert: ModerationQueueHigh
+        expr: moderation_queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Moderation queue is building up"
+          description: "Queue size is {{ $value }} items. Processing may be falling behind."
+
+      # High error rate
+      - alert: ModerationHighErrorRate
+        expr: |
+          rate(moderation_requests_total{status="failed"}[5m]) 
+          / rate(moderation_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High moderation error rate"
+          description: "Error rate is above 10% for the last 5 minutes."
+
+      # Slow inference
+      - alert: ModerationSlowInference
+        expr: histogram_quantile(0.95, rate(moderation_inference_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow ML inference"
+          description: "95th percentile inference time is {{ $value }}s."
+
+      # High callback failure rate
+      - alert: ModerationCallbackFailures
+        expr: |
+          rate(moderation_callbacks_total{status="failed"}[5m])
+          / rate(moderation_callbacks_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High callback failure rate"
+          description: "Callback failure rate is above 20%."
+
+      # High CPU usage (host level)
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on host"
+          description: "CPU usage is above 80% for the last 10 minutes."
+
+      # High memory usage (host level)
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on host"
+          description: "Memory usage is above 80%."
+
+      # Low disk space
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Less than 20% disk space remaining."
+

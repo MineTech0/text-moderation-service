@@ -1,40 +1,91 @@
 # Text Moderation Service
 
-A lightweight, production-ready text moderation service designed to run on CPU-only environments. It combines high-performance wordlist filtering (Finnish & English) with a pluggable machine learning toxicity model.
+A production-ready, ML-powered text moderation service designed for CPU-only environments. It combines high-performance wordlist filtering (Finnish & English) with a transformer-based toxicity model.
 
 ## Features
 
-*   **Dual-layer Filtering**:
-    *   **Wordlist Filter**: Fast, rule-based filtering with normalization (leet speak handling, repetition removal). Automatically downloads/updates lists.
-    *   **ML Model**: Toxicity classification using Hugging Face transformers (default: `TurkuNLP/bert-large-finnish-cased-toxicity`).
-*   **Asynchronous Processing**: Immediate API response; heavy lifting happens in a background worker queue.
-*   **Callback Architecture**: Results are delivered via HTTP POST to a specified callback URL.
-*   **Production Ready**: Dockerized, non-root user, healthchecks, retry logic, and structured logging.
-*   **Configurable**: Easy to swap models or adjust sensitivity thresholds via environment variables.
+- **Dual-layer Filtering**:
+  - **Wordlist Filter**: Fast, rule-based filtering with normalization (leet speak handling, repetition removal)
+  - **ML Model**: Toxicity classification using Hugging Face transformers (default: `TurkuNLP/bert-large-finnish-cased-toxicity`)
+- **Asynchronous Processing**: Immediate API response; heavy lifting happens in a background worker queue
+- **Callback Architecture**: Results are delivered via HTTP POST to a specified callback URL
+- **Production Ready**: Multi-stage Docker build, non-root user, health checks, rate limiting, CORS
+- **Monitoring**: Built-in Prometheus metrics and Grafana dashboards
+- **Configurable**: All settings via environment variables
 
-## Quick Start with Docker
+## Quick Start
 
-1.  **Build the image:**
+### Local Development
 
-    ```bash
-    docker build -t moderation-service .
-    ```
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-2.  **Run the container:**
+# Run the application
+uvicorn app.main:app --reload --port 8000
+```
 
-    ```bash
-    mkdir -p data && chmod 777 data
-    docker run -d \
-      -p 8000:8000 \
-      --name moderation-service \
-      -v $(pwd)/data:/app/data \
-      -v moderation_model_cache:/app/model_cache \
-      moderation-service
-    ```
+### Docker (Development)
 
-    *   Port 8000 is exposed.
-    *   `./data` volume persists downloaded wordlists.
-    *   `model_cache` volume prevents re-downloading the ML model on every restart.
+```bash
+# Build and run with monitoring stack
+docker compose up -d
+
+# Access points:
+# - API:        http://localhost:8000
+# - Prometheus: http://localhost:9090
+# - Grafana:    http://localhost:3000 (admin/moderation123)
+```
+
+---
+
+## 🚀 Coolify Deployment
+
+### Option 1: Deploy via Docker Compose (Recommended)
+
+1. **In Coolify**, create a new service:
+   - Select "Docker Compose"
+   - Connect your Git repository
+
+2. **Set the compose file** to `docker-compose.prod.yml`
+
+3. **Configure environment variables** in Coolify:
+
+   | Variable | Required | Description |
+   |----------|----------|-------------|
+   | `GF_SECURITY_ADMIN_PASSWORD` | ✅ | Grafana admin password |
+   | `API_TOKEN` | ❌ | API authentication token |
+   | `CORS_ORIGINS` | ❌ | Allowed origins (default: `*`) |
+   | `GF_SERVER_ROOT_URL` | ❌ | Grafana public URL |
+
+4. **Deploy** and wait for the model to download (~2-3 min on first start)
+
+### Option 2: Deploy Service Only
+
+If you only need the moderation API (without monitoring):
+
+```bash
+docker build -t moderation-service .
+docker run -d \
+  -p 8000:8000 \
+  -e API_TOKEN=your-secret-token \
+  -e CORS_ORIGINS=https://your-app.com \
+  -v moderation_data:/app/data \
+  -v moderation_model_cache:/app/model_cache \
+  moderation-service
+```
+
+### Coolify Network Configuration
+
+For Coolify deployments, ensure these ports are exposed:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| `moderation-service` | 8000 | Main API |
+| `prometheus` | 9090 | Metrics |
+| `grafana` | 3000 | Dashboards |
+
+---
 
 ## API Documentation
 
@@ -42,10 +93,13 @@ A lightweight, production-ready text moderation service designed to run on CPU-o
 
 **Endpoint:** `POST /moderate`
 
-Queues a text for moderation. Returns immediately.
+**Headers:**
+```
+Authorization: Bearer <your-api-token>  # If API_TOKEN is set
+Content-Type: application/json
+```
 
 **Request:**
-
 ```json
 {
   "id": "msg_12345",
@@ -55,7 +109,6 @@ Queues a text for moderation. Returns immediately.
 ```
 
 **Response (200 OK):**
-
 ```json
 {
   "status": "queued",
@@ -63,11 +116,9 @@ Queues a text for moderation. Returns immediately.
 }
 ```
 
-### 2. Receive Moderation Result (Callback)
+### 2. Callback Payload
 
-The service will send a `POST` request to your `callback_url`.
-
-**Payload:**
+The service sends a `POST` request to your `callback_url`:
 
 ```json
 {
@@ -82,60 +133,170 @@ The service will send a `POST` request to your `callback_url`.
 }
 ```
 
-*   **decision**: `allow`, `flag`, or `block`.
-*   **reason.badword**: `true` if it hit the hardcoded blocklist.
-*   **reason.toxicity_score**: 0.0 - 1.0 (higher is more toxic).
+**Decisions:**
+- `allow` - Content is safe
+- `flag` - Content needs review (score > FLAG_THRESHOLD)
+- `block` - Content should be blocked (score > BLOCK_THRESHOLD or badword detected)
 
 ### 3. Health Checks
 
-*   `GET /healthz`: Liveness probe (returns 200 if process is running).
-*   `GET /readyz`: Readiness probe (returns 200 if model and wordlists are loaded).
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /healthz` | Liveness probe (process running) |
+| `GET /readyz` | Readiness probe (model loaded) |
+| `GET /metrics` | Prometheus metrics |
+
+---
 
 ## Configuration
 
-You can configure the service using environment variables.
+All settings can be configured via environment variables:
+
+### Application Settings
 
 | Variable | Default | Description |
-| :--- | :--- | :--- |
-| `SERVICE_NAME` | Text Moderation Service | Name of the service. |
-| `DEBUG` | False | Enable debug logging. |
-| `MODEL_BACKEND` | huggingface_pipeline | Backend to use. |
-| `MODEL_NAME` | TurkuNLP/bert-large-finnish-cased-toxicity | Hugging Face model ID. |
-| `MODEL_DEVICE` | -1 | `-1` for CPU, `0` for GPU. |
-| `WORDLIST_REFRESH_DAYS` | 7 | How often to re-download wordlists (days). |
-| `TRIVIAL_LENGTH_THRESHOLD`| 2 | Texts shorter than this are automatically allowed. |
-| `BLOCK_THRESHOLD` | 0.9 | Score > 0.9 = block. |
-| `FLAG_THRESHOLD` | 0.7 | Score > 0.7 = flag. |
-| `MAX_RETRIES` | 3 | Number of callback retries. |
-| `RETRY_BACKOFF_FACTOR` | 1.5 | Multiplier for backoff delay. |
+|----------|---------|-------------|
+| `SERVICE_NAME` | Text Moderation Service | Service name |
+| `DEBUG` | `false` | Enable debug mode |
+| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
+| `LOG_FORMAT` | `json` | Log format (`json` or `text`) |
 
-## Local Development
+### Model Settings
 
-1.  **Install dependencies:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODEL_NAME` | `TurkuNLP/bert-large-finnish-cased-toxicity` | HuggingFace model |
+| `MODEL_DEVICE` | `-1` | Device (`-1` for CPU, `0`+ for GPU) |
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Moderation Thresholds
 
-2.  **Run the application:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BLOCK_THRESHOLD` | `0.9` | Score above this = block |
+| `FLAG_THRESHOLD` | `0.7` | Score above this = flag |
+| `TRIVIAL_LENGTH_THRESHOLD` | `2` | Texts shorter = auto-allow |
 
-    ```bash
-    uvicorn app.main:app --reload --port 8000
-    ```
+### Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_TOKEN` | _(empty)_ | Required token for API access |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+| `RATE_LIMIT_ENABLED` | `true` | Enable rate limiting |
+| `RATE_LIMIT_PER_MINUTE` | `100` | Max requests per IP per minute |
+
+---
+
+## Monitoring
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `moderation_requests_total` | Counter | Total requests by status |
+| `moderation_queue_size` | Gauge | Current queue size |
+| `moderation_processing_seconds` | Histogram | Processing time |
+| `moderation_inference_seconds` | Histogram | ML inference time |
+| `moderation_decisions_total` | Counter | Decisions by type |
+| `moderation_toxicity_score` | Histogram | Score distribution |
+| `moderation_callbacks_total` | Counter | Callback attempts |
+
+### Pre-configured Alerts
+
+- Service down
+- High queue size (>100 items)
+- High error rate (>10%)
+- Slow inference (p95 > 2s)
+- High callback failure rate (>20%)
+- High CPU/Memory usage (>80%)
+
+### Grafana Dashboard
+
+The included dashboard provides:
+- **Overview**: Status, queue size, latency, request rate
+- **Inference Performance**: ML latency percentiles
+- **Decisions**: Allow/flag/block distribution
+- **System Resources**: CPU, memory, disk, network
+
+---
 
 ## Architecture
 
-1.  **FastAPI** receives the request and pushes it to an internal `queue.Queue`.
-2.  **Background Worker** thread pulls requests from the queue.
-3.  **Moderation Engine**:
-    *   Checks for triviality (length).
-    *   Checks normalized text against `badwords_fi.txt` and `badwords_en.txt` (loaded into memory).
-    *   Runs the text through the Hugging Face Pipeline.
-4.  **Callback**: The result is posted back to the client's URL.
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│   Client    │───▶│   FastAPI   │───▶│    Queue    │
+└─────────────┘    └─────────────┘    └─────────────┘
+                          │                   │
+                          ▼                   ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │  /metrics   │    │   Worker    │
+                   └─────────────┘    └─────────────┘
+                          │                   │
+                          ▼                   ▼
+                   ┌─────────────┐    ┌─────────────┐
+                   │ Prometheus  │    │   Engine    │
+                   └─────────────┘    └─────────────┘
+                          │                   │
+                          ▼                   ├──▶ Wordlist Filter
+                   ┌─────────────┐           │
+                   │   Grafana   │           └──▶ ML Model (BERT)
+                   └─────────────┘                    │
+                                                      ▼
+                                              ┌─────────────┐
+                                              │  Callback   │
+                                              └─────────────┘
+```
+
+---
 
 ## Security
 
-*   The Docker image runs as a non-root user (`appuser`).
-*   Dependencies are pinned and minimal.
-*   No input text is logged by default in production mode.
+- **Non-root user**: Docker image runs as `appuser` (UID 1000)
+- **API Authentication**: Optional Bearer token
+- **Rate Limiting**: Configurable per-IP limits
+- **CORS**: Configurable allowed origins
+- **No sensitive logging**: Text content not logged in production
+- **Health checks**: Kubernetes-compatible probes
 
+---
+
+## Development
+
+### Project Structure
+
+```
+text-moderation-service/
+├── app/
+│   ├── main.py          # FastAPI application
+│   ├── config.py        # Settings
+│   ├── models.py        # Pydantic models
+│   ├── engine.py        # Moderation logic
+│   ├── worker.py        # Background worker
+│   ├── wordlist.py      # Wordlist handling
+│   ├── adapters.py      # ML model adapters
+│   └── metrics.py       # Prometheus metrics
+├── monitoring/
+│   ├── prometheus/
+│   │   ├── prometheus.yml
+│   │   └── alerts.yml
+│   └── grafana/
+│       ├── dashboards/
+│       └── provisioning/
+├── docker-compose.yml       # Development
+├── docker-compose.prod.yml  # Production/Coolify
+├── Dockerfile
+├── requirements.txt
+└── env.example
+```
+
+### Running Tests
+
+```bash
+python test_script.py
+```
+
+---
+
+## License
+
+MIT

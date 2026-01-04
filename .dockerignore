@@ -1,15 +1,57 @@
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.env
+# Git
 .git
 .gitignore
-Dockerfile
-README.md
-data/
-model_cache/
 
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+.eggs
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.docker/
+
+# Documentation
+*.md
+docs/
+
+# Testing
+test_*.py
+tests/
+*_test.py
+
+# Monitoring configs (built separately)
+monitoring/
+
+# Data (mounted as volume)
+data/
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+
+# Local development
+.cursor/

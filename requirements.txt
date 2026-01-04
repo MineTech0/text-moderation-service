@@ -1,8 +1,23 @@
-fastapi
-uvicorn[standard]
-pydantic
-pydantic-settings
-requests
-transformers
-torch
+# =============================================================================
+# Text Moderation Service - Python Dependencies
+# =============================================================================
+# Pinned versions for production stability
 
+# Web Framework
+fastapi>=0.104.0,<1.0.0
+uvicorn[standard]>=0.24.0,<1.0.0
+
+# Data Validation
+pydantic>=2.5.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
+
+# HTTP Client
+requests>=2.31.0,<3.0.0
+
+# ML/AI
+transformers>=4.35.0,<5.0.0
+# torch is installed separately in Dockerfile for CPU-only version
+
+# Monitoring
+prometheus-fastapi-instrumentator>=6.1.0,<7.0.0
+prometheus-client>=0.19.0,<1.0.0
