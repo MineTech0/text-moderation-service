@@ -312,13 +312,15 @@ text-moderation-service/
 │   └── metrics.py       # Prometheus metrics
 ├── monitoring/
 │   ├── prometheus/
+│   │   ├── Dockerfile       # Custom image with config
 │   │   ├── prometheus.yml
 │   │   └── alerts.yml
 │   └── grafana/
+│       ├── Dockerfile       # Custom image with dashboards
 │       ├── dashboards/
 │       └── provisioning/
-├── docker-compose.yml       # Development
-├── docker-compose.prod.yml  # Production/Coolify
+├── docker-compose.yml       # Development (with mounts)
+├── docker-compose.prod.yml  # Production/Coolify (no mounts)
 ├── Dockerfile
 ├── requirements.txt
 └── env.example

@@ -1,13 +1,10 @@
 # =============================================================================
 # Text Moderation Service - Coolify Docker Compose
 # =============================================================================
-# Only Grafana is exposed externally. Other services communicate internally.
+# All configs are baked into images (no file mounts for Coolify)
+# Only Grafana is exposed externally via SERVICE_FQDN
 #
-# Coolify Magic Variables used:
-#   - SERVICE_FQDN_GRAFANA_3000: External Grafana URL
-#   - SERVICE_PASSWORD_*: Auto-generated passwords
-#
-# Internal service communication (no external access):
+# Internal services:
 #   - moderation-service:8000 (API)
 #   - prometheus:9090 (Metrics)
 #   - node-exporter:9100 (Host metrics)
@@ -26,20 +23,16 @@ services:
       - moderation_data:/app/data
       - moderation_model_cache:/app/model_cache
     environment:
-      # Application
       - DEBUG=false
       - LOG_FORMAT=json
       - LOG_LEVEL=INFO
-      # Model
       - MODEL_BACKEND=huggingface_pipeline
       - MODEL_NAME=${MODEL_NAME:-TurkuNLP/bert-large-finnish-cased-toxicity}
       - MODEL_DEVICE=-1
-      # Security
       - API_TOKEN=${API_TOKEN:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
       - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
       - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-100}
-      # Thresholds
       - BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-0.9}
       - FLAG_THRESHOLD=${FLAG_THRESHOLD:-0.7}
     healthcheck:
@@ -56,14 +49,14 @@ services:
           memory: 2G
 
   # ===========================================================================
-  # Prometheus (Internal Metrics Collection)
+  # Prometheus (Internal) - Config baked into image
   # ===========================================================================
   prometheus:
-    image: prom/prometheus:v2.47.0
+    build:
+      context: ./monitoring/prometheus
+      dockerfile: Dockerfile
     restart: always
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -77,27 +70,26 @@ services:
         condition: service_healthy
 
   # ===========================================================================
-  # Grafana (External Dashboard) - Only externally accessible service
+  # Grafana (External) - Config & dashboards baked into image
   # ===========================================================================
   grafana:
-    image: grafana/grafana:10.1.0
+    build:
+      context: ./monitoring/grafana
+      dockerfile: Dockerfile
     restart: always
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
-      # Coolify FQDN - only Grafana exposed externally
+      # Coolify FQDN - only externally accessible service
       - SERVICE_FQDN_GRAFANA_3000
-      # Security - use Coolify generated password
+      # Security
       - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${SERVICE_PASSWORD_GRAFANA}
       - GF_USERS_ALLOW_SIGN_UP=false
       # Server
       - GF_SERVER_ROOT_URL=$SERVICE_URL_GRAFANA
       - GF_SERVER_SERVE_FROM_SUB_PATH=false
-      # Features
-      - GF_FEATURE_TOGGLES_ENABLE=publicDashboards
+      # Plugins
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
       # Security
       - GF_AUTH_ANONYMOUS_ENABLED=false
@@ -108,7 +100,7 @@ services:
       - prometheus
 
   # ===========================================================================
-  # Node Exporter (Internal Host Metrics)
+  # Node Exporter (Internal)
   # ===========================================================================
   node-exporter:
     image: prom/node-exporter:v1.6.1
@@ -124,7 +116,7 @@ services:
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
 
 # =============================================================================
-# Volumes
+# Volumes (only data, no config mounts)
 # =============================================================================
 volumes:
   moderation_data:
