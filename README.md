@@ -41,24 +41,55 @@ docker compose up -d
 
 ## 🚀 Coolify Deployment
 
-### Option 1: Deploy via Docker Compose (Recommended)
+### Deploy via Docker Compose
 
 1. **In Coolify**, create a new service:
-   - Select "Docker Compose"
+   - Select **"Docker Compose"**
    - Connect your Git repository
 
 2. **Set the compose file** to `docker-compose.prod.yml`
 
-3. **Configure environment variables** in Coolify:
+3. **Coolify Magic Variables** (auto-generated):
 
-   | Variable | Required | Description |
-   |----------|----------|-------------|
-   | `GF_SECURITY_ADMIN_PASSWORD` | ✅ | Grafana admin password |
-   | `API_TOKEN` | ❌ | API authentication token |
-   | `CORS_ORIGINS` | ❌ | Allowed origins (default: `*`) |
-   | `GF_SERVER_ROOT_URL` | ❌ | Grafana public URL |
+   | Variable | Description |
+   |----------|-------------|
+   | `SERVICE_FQDN_GRAFANA_3000` | Grafana dashboard URL (only external service) |
+   | `SERVICE_PASSWORD_GRAFANA` | Grafana admin password |
 
-4. **Deploy** and wait for the model to download (~2-3 min on first start)
+4. **Optional overrides** (set in Coolify UI if needed):
+
+   | Variable | Default | Description |
+   |----------|---------|-------------|
+   | `API_TOKEN` | _(empty)_ | API authentication token |
+   | `CORS_ORIGINS` | `*` | Allowed origins |
+   | `MODEL_NAME` | TurkuNLP/bert-large-finnish-cased-toxicity | HuggingFace model |
+
+5. **Deploy** and wait for the model to download (~2-3 min on first start)
+
+### Service Architecture
+
+```
+Internet
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  Coolify (Reverse Proxy)                        │
+└─────────────────────────────────────────────────┘
+    │
+    ▼ Only Grafana exposed
+┌─────────────────────────────────────────────────┐
+│  grafana:3000  ◄── SERVICE_FQDN_GRAFANA_3000   │
+│       │                                         │
+│       ▼                                         │
+│  prometheus:9090  (internal)                    │
+│       │                                         │
+│       ▼                                         │
+│  moderation-service:8000  (internal)            │
+│  node-exporter:9100  (internal)                 │
+└─────────────────────────────────────────────────┘
+```
+
+**Grafana password** is shown in Coolify UI → Environment Variables.
 
 ### Option 2: Deploy Service Only
 
@@ -75,15 +106,19 @@ docker run -d \
   moderation-service
 ```
 
-### Coolify Network Configuration
+### Coolify Network & Ports
 
-For Coolify deployments, ensure these ports are exposed:
+Coolify automatically manages:
+- ✅ **Reverse proxy** with SSL/TLS for Grafana
+- ✅ **Internal networking** between all services
+- ✅ **No manual port exposure needed**
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| `moderation-service` | 8000 | Main API |
-| `prometheus` | 9090 | Metrics |
-| `grafana` | 3000 | Dashboards |
+| Service | Internal Address | External |
+|---------|------------------|----------|
+| `moderation-service` | `moderation-service:8000` | ❌ Internal only |
+| `prometheus` | `prometheus:9090` | ❌ Internal only |
+| `grafana` | `grafana:3000` | ✅ Via SERVICE_FQDN |
+| `node-exporter` | `node-exporter:9100` | ❌ Internal only |
 
 ---
 
